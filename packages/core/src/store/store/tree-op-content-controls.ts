@@ -1,6 +1,7 @@
 import {
   checkboxContent,
   checkboxStateHexes,
+  isInlineControl,
   type CheckboxSymbol,
 } from './content-control-checkbox.ts';
 import { validateCommitTextFormField } from './tree-op-field-results.ts';
@@ -1653,7 +1654,7 @@ export function applySetContentControlValue(
   // By name, not by kind: a `w:sdtContent` holding a child outside its typed set (a simple
   // field, say) demotes to generic, and must still be the one content node the write replaces.
   const content = contentControlContentOf(control);
-  const inline = parentOf(part, control.id)?.kind === 'paragraph';
+  const inline = isInlineControl(part, control.id);
   const children = planned.symbol
     ? checkboxContent(content, planned.symbol, planned.text, nextId, inline)
     : contentWithText(content, planned.text, nextId);

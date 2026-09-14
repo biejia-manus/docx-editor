@@ -261,3 +261,99 @@ for (const input of ['string', 'typed'] as const) {
     ).toBeNull();
   });
 }
+
+for (const input of ['string', 'typed'] as const) {
+  const value = input === 'string' ? 'true' : ({ kind: 'checkbox', checked: true } as const);
+  const apply = (part: OoxmlPart) => {
+    const node = contentControlsIn(part.root)[0]!.node;
+    return applyTreeOp(part, { op: 'setContentControlValue', controlId: node.id, value });
+  };
+  const toggle = (part: OoxmlPart): string => {
+    const result = apply(part);
+    if (!result.ok) throw new Error(result.reason);
+    return serializeOoxmlPart(result.part);
+  };
+
+  test(`an empty checkbox ${input} write inside a hyperlink lands a bare run, not a paragraph`, () => {
+    const xml = toggle(load(`<w:p><w:hyperlink w:anchor="top">${control('')}</w:hyperlink></w:p>`));
+    expect(xml).toContain(`<w:sdtContent>${mintedRun}</w:sdtContent></w:sdt></w:hyperlink>`);
+    expect(xml.match(/<w:p>/g)).toHaveLength(1);
+  });
+
+  test(`checkbox ${input} writes keep a complex field balanced and rewrite its result`, () => {
+    const field =
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> FORMCHECKBOX </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>X</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>';
+    const xml = toggle(load(control(paragraph(field))));
+    expect(xml.match(/w:fldCharType="begin"/g)).toHaveLength(1);
+    expect(xml.match(/w:fldCharType="separate"/g)).toHaveLength(1);
+    expect(xml.match(/w:fldCharType="end"/g)).toHaveLength(1);
+    expect(xml).toContain(
+      `<w:r><w:fldChar w:fldCharType="separate"/></w:r>${mintedRun}<w:r><w:fldChar`
+    );
+    expect(xml).not.toContain('<w:t>X</w:t>');
+  });
+
+  test(`checkbox ${input} writes recognise a glyph run that carries a rendered page break`, () => {
+    const label = '<w:r><w:t xml:space="preserve">Agree: </w:t></w:r>';
+    const glyph = '<w:r><w:lastRenderedPageBreak/><w:sym w:font="MS Gothic" w:char="2610"/></w:r>';
+    const xml = toggle(load(paragraph(control(label + glyph))));
+    expect(xml).toContain('<w:t xml:space="preserve">Agree: </w:t>');
+    expect(xml).toContain('<w:sym w:char="2612" w:font="MS Gothic"/>');
+    expect(xml.match(/<w:sym /g)).toHaveLength(1);
+  });
+
+  test(`checkbox ${input} writes add a run to inline content that holds only a tracked deletion`, () => {
+    const deleted = deletedRun('<w:r><w:sym w:font="MS Gothic" w:char="2610"/></w:r>');
+    const xml = toggle(load(paragraph(control(deleted))));
+    expect(xml).toContain(`</w:del>${mintedRun}</w:sdtContent>`);
+    expect(xml).toContain('<w:del ');
+  });
+
+  test(`checkbox ${input} writes treat whitespace-only content as empty`, () => {
+    const xml = toggle(load(control('\n    ')));
+    expect(xml).toContain(`<w:sdtContent><w:p>${mintedRun}</w:p></w:sdtContent>`);
+  });
+
+  test(`checkbox ${input} writes place the run inside a permission range`, () => {
+    const permitted = '<w:p><w:permStart w:id="1" w:edGrp="everyone"/><w:permEnd w:id="1"/></w:p>';
+    const xml = toggle(load(control(permitted)));
+    expect(xml).toContain(
+      `<w:permStart w:edGrp="everyone" w:id="1"/>${mintedRun}<w:permEnd w:id="1"/>`
+    );
+  });
+
+  test(`checkbox ${input} writes keep a drawing run and add the glyph beside it`, () => {
+    const drawing =
+      '<w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"/></w:drawing></w:r>';
+    const xml = toggle(load(control(paragraph(drawing))));
+    expect(xml).toContain('<w:drawing>');
+    expect(xml.match(/<w:sym /g)).toHaveLength(1);
+  });
+
+  test(`checkbox ${input} writes refuse a state that names no code point`, () => {
+    const malformed =
+      '<w:sdt><w:sdtPr><w:id w:val="9"/><w14:checkbox><w14:checked w14:val="0"/><w14:checkedState w14:val="GG12" w14:font="MS Gothic"/><w14:uncheckedState w14:val="2610" w14:font="MS Gothic"/></w14:checkbox></w:sdtPr><w:sdtContent><w:r><w:t>☐</w:t></w:r></w:sdtContent></w:sdt>';
+    const part = load(paragraph(malformed));
+    const node = contentControlsIn(part.root)[0]!.node;
+    expect(apply(part)).toEqual({ ok: false, reason: 'invalidArgs' });
+    // The string validator inspects the state; the typed validator leaves values to the applier.
+    expect(validateTreeOp(part, { op: 'setContentControlValue', controlId: node.id, value })).toBe(
+      input === 'string' ? 'invalidArgs' : null
+    );
+  });
+}
+
+test('a typed checkbox value on a text control is a type mismatch, whatever its content', () => {
+  const text =
+    '<w:sdt><w:sdtPr><w:id w:val="5"/><w:text/></w:sdtPr><w:sdtContent><w:bookmarkStart w:id="1" w:name="x"/><w:bookmarkEnd w:id="1"/></w:sdtContent></w:sdt>';
+  const part = load(paragraph(text));
+  const node = contentControlsIn(part.root)[0]!.node;
+  const op = {
+    op: 'setContentControlValue',
+    controlId: node.id,
+    value: { kind: 'checkbox', checked: true },
+  } as const;
+  // The content-shape gate must not answer for a control of another type.
+  expect(validateTreeOp(part, op)).toBeNull();
+  expect(applyTreeOp(part, op)).toEqual({ ok: false, reason: 'typeMismatch' });
+});
