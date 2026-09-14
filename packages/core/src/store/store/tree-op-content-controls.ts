@@ -55,6 +55,7 @@ import { isValidXmlText } from '../package/sinks.ts';
 import type { OoxmlElement, OoxmlNode, OoxmlPart } from '../package/ooxml-tree.ts';
 import {
   TEXT_DEPS,
+  contentControlContentOf,
   fromEdit,
   parentOf,
   parseCheckboxValue,
@@ -1649,7 +1650,9 @@ export function applySetContentControlValue(
 
   const nextId = createNodeIdAllocator(part);
   const sdtPr = contentControlPropertiesContainerOf(control);
-  const content = contentControlContentNodeOf(control);
+  // By name, not by kind: a `w:sdtContent` holding a child outside its typed set (a simple
+  // field, say) demotes to generic, and must still be the one content node the write replaces.
+  const content = contentControlContentOf(control);
   const inline = parentOf(part, control.id)?.kind === 'paragraph';
   const children = planned.symbol
     ? checkboxContent(content, planned.symbol, planned.text, nextId, inline)
@@ -1675,9 +1678,7 @@ export function applySetContentControlValue(
     ...control,
     children: [
       nextProperties,
-      ...control.children.filter(
-        (child) => child.id !== sdtPr?.id && child.kind !== 'contentControlContent'
-      ),
+      ...control.children.filter((child) => child.id !== sdtPr?.id && child.id !== content?.id),
       nextContent,
     ],
   } as OoxmlNode;

@@ -89,6 +89,34 @@ function paragraphMarkProperties(
   return cloneWithFreshIds({ ...rPr, children: formatting } as OoxmlNode, nextId);
 }
 
+/**
+ * The run properties a rewritten display run keeps. Word's prompt run is styled
+ * `PlaceholderText`; the same write clears `w:showingPlcHdr`, so that style must not follow
+ * the value onto the glyph.
+ */
+function withoutPlaceholderStyle(properties: OoxmlNode | undefined): OoxmlNode | undefined {
+  if (!properties || properties.kind === 'textValue') return properties;
+  const children = properties.children.filter(
+    (child) =>
+      !(
+        isWml(child, 'rStyle') &&
+        child.kind !== 'textValue' &&
+        child.attributes.some((a) => a.localName === 'val' && a.value === 'PlaceholderText')
+      )
+  );
+  if (children.length === properties.children.length) return properties;
+  return children.length === 0 ? undefined : ({ ...properties, children } as OoxmlNode);
+}
+
+/**
+ * Whether {@link checkboxContent} can write this content. The validator asks so `can()` and
+ * `exec()` agree; the probe's ids are discarded with its result.
+ */
+export function checkboxContentWritable(content: OoxmlElement | undefined): boolean {
+  const probe = { hex: '2612', font: 'MS Gothic', states: ['2612', '2610'] };
+  return checkboxContent(content, probe, '☒', () => 'probe', true) !== null;
+}
+
 function normalizedHex(value: string | undefined): string | null {
   if (value === undefined || !/^[0-9A-Fa-f]{1,6}$/.test(value)) return null;
   return value.toUpperCase().padStart(4, '0');
@@ -139,8 +167,13 @@ export function checkboxContent(
   nextId: () => string,
   inline: boolean
 ): readonly OoxmlNode[] | null {
+  // Word's defaults stand in for a state that names no font. The fallback text for a code
+  // point too wide for `w:sym` is the decoded glyph, never the hex digits the state declares.
+  const font = symbol.font || 'MS Gothic';
+  const ownHex = normalizedHex(symbol.hex);
+  const fallback = (ownHex === null ? null : glyphOf(ownHex)) ?? text;
   const mint = (properties?: OoxmlNode): OoxmlNode =>
-    mintCheckboxRun(nextId, symbol.hex, symbol.font, properties, text);
+    mintCheckboxRun(nextId, symbol.hex, font, withoutPlaceholderStyle(properties), fallback);
   if (!content || content.children.length === 0) {
     return inline ? [mint()] : [paragraphOf(nextId, [mint()])];
   }
@@ -156,13 +189,18 @@ export function checkboxContent(
   }
   const isDisplayRun = (run: OoxmlElement): boolean => displaysState(run, hexes, glyphs);
 
-  // Follow content containers only: never mistake a historical run in rPrChange or a
-  // nested control's value for this checkbox's display. Bound recursion on imported XML.
+  // Follow content containers only: never mistake a historical run in rPrChange for this
+  // checkbox's display. A nested control or simple field is content the checkbox shows, so
+  // its runs count; its own properties are not containers and fall out of the walk. Bound
+  // recursion on imported XML.
   const isContainer = (node: OoxmlElement): boolean =>
     node.kind === 'contentControlContent' ||
+    isWml(node, 'sdtContent') ||
+    node.kind === 'contentControl' ||
     BLOCK_KINDS.has(node.kind) ||
     isInlineRunContainer(node) ||
-    isWml(node, 'customXml');
+    isWml(node, 'customXml') ||
+    isWml(node, 'fldSimple');
 
   const rewrite = (
     node: OoxmlNode,

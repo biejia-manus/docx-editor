@@ -7,8 +7,10 @@
 
 import type { OoxmlNode, OoxmlParagraphNode, OoxmlPart } from '../package/ooxml-tree.ts';
 import { isValidXmlText } from '../package/sinks.ts';
+import { checkboxContentWritable } from './content-control-checkbox.ts';
 import {
   contentControlAncestorsOf,
+  contentControlContentOf,
   contentControlValueTypeOf,
   declaredLockOf,
   effectiveContentLockAt,
@@ -261,7 +263,9 @@ export function validateSetContentControlValue(
     case 'combo':
       return null;
     case 'checkbox':
-      return parseCheckboxValue(value) === null ? 'typeMismatch' : null;
+      if (parseCheckboxValue(value) === null) return 'typeMismatch';
+      // The applier refuses content it cannot rewrite in place; say so before the write.
+      return checkboxContentWritable(contentControlContentOf(control)) ? null : 'unsupported';
     case 'date': {
       if (formatSdtDateDisplay(value, undefined) === null) return 'invalidArgs';
       return null;

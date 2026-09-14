@@ -8,6 +8,7 @@ import {
   type OoxmlPart,
 } from '../index.ts';
 import { applyTreeOp } from '../store/tree-op-apply.ts';
+import { validateTreeOp } from '../store/tree-op-validate.ts';
 
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const W14 = 'http://schemas.microsoft.com/office/word/2010/wordml';
@@ -208,14 +209,55 @@ for (const input of ['string', 'typed'] as const) {
     );
   });
 
-  test(`checkbox ${input} writes refuse a nested control rather than writing into it`, () => {
+  test(`checkbox ${input} writes update the glyph run inside a nested control`, () => {
     const nested =
       '<w:sdt><w:sdtPr><w:id w:val="5"/><w:text/></w:sdtPr><w:sdtContent><w:r><w:t>☐</w:t></w:r></w:sdtContent></w:sdt>';
-    const part = load(paragraph(control(nested)));
-    const before = serializeOoxmlPart(part);
+    const xml = toggle(load(paragraph(control(nested))));
+    expect(xml).toContain(
+      `<w:sdtContent><w:sdt><w:sdtPr><w:id w:val="5"/><w:text/></w:sdtPr><w:sdtContent>${mintedRun}</w:sdtContent></w:sdt></w:sdtContent>`
+    );
+    expect(xml.match(/<w:sym /g)).toHaveLength(1);
+  });
+
+  test(`checkbox ${input} writes update the glyph run inside a simple field`, () => {
+    const field = '<w:fldSimple w:instr=" FORMCHECKBOX "><w:r><w:t>☐</w:t></w:r></w:fldSimple>';
+    const xml = toggle(load(paragraph(control(field))));
+    expect(xml).toContain(`<w:fldSimple w:instr=" FORMCHECKBOX ">${mintedRun}</w:fldSimple>`);
+    expect(xml.match(/<w:sym /g)).toHaveLength(1);
+  });
+
+  test(`checkbox ${input} writes drop the placeholder style from the prompt run`, () => {
+    const prompt =
+      '<w:r><w:rPr><w:rStyle w:val="PlaceholderText"/><w:b/></w:rPr><w:t>Click here</w:t></w:r>';
+    const xml = toggle(load(paragraph(control(prompt))));
+    expect(xml).not.toContain('PlaceholderText');
+    expect(xml).toContain(
+      '<w:r><w:rPr><w:rFonts w:ascii="MS Gothic" w:eastAsia="MS Gothic" w:hAnsi="MS Gothic"/><w:b/></w:rPr><w:sym w:char="2612" w:font="MS Gothic"/></w:r>'
+    );
+  });
+
+  test(`checkbox ${input} writes decode a supplementary state glyph and default an empty font`, () => {
+    const wide =
+      '<w:sdt><w:sdtPr><w:id w:val="9"/><w14:checkbox><w14:checked w14:val="0"/><w14:checkedState w14:val="1F5F8" w14:font=""/><w14:uncheckedState w14:val="2610" w14:font="MS Gothic"/></w14:checkbox></w:sdtPr><w:sdtContent><w:r><w:rPr><w:b/></w:rPr><w:t>☐</w:t></w:r></w:sdtContent></w:sdt>';
+    const xml = toggle(load(paragraph(wide)));
+    expect(xml).toContain(
+      '<w:r><w:rPr><w:rFonts w:ascii="MS Gothic" w:eastAsia="MS Gothic" w:hAnsi="MS Gothic"/><w:b/></w:rPr><w:t>🗸</w:t></w:r>'
+    );
+    expect(xml).not.toContain('1F5F8</w:t>');
+  });
+
+  test(`validation refuses a checkbox ${input} write the applier would refuse`, () => {
+    const part = load(
+      control('<x:content xmlns:x="urn:opaque"><x:value>keep</x:value></x:content>')
+    );
     const node = contentControlsIn(part.root)[0]!.node;
-    const result = applyTreeOp(part, { op: 'setContentControlValue', controlId: node.id, value });
-    expect(result).toEqual({ ok: false, reason: 'unsupported' });
-    expect(serializeOoxmlPart(part)).toBe(before);
+    expect(validateTreeOp(part, { op: 'setContentControlValue', controlId: node.id, value })).toBe(
+      'unsupported'
+    );
+    const writable = load(paragraph(control(run)));
+    const ok = contentControlsIn(writable.root)[0]!.node;
+    expect(
+      validateTreeOp(writable, { op: 'setContentControlValue', controlId: ok.id, value })
+    ).toBeNull();
   });
 }

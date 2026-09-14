@@ -35,6 +35,7 @@ import {
   isWritableContentControlMetadata,
 } from './tree-op-content-controls.ts';
 import {
+  contentControlContentOf,
   effectiveContentLockAt,
   effectiveLockOf,
   innermostContentControlAround,
@@ -42,6 +43,7 @@ import {
   isTemporaryControl,
   paragraphPropertiesNodeOf,
 } from './tree-op-nodes.ts';
+import { checkboxContentWritable } from './content-control-checkbox.ts';
 import { scopedRevisionRoot } from './tree-op-revision-scope.ts';
 import {
   validateTableRowOp,
@@ -279,6 +281,14 @@ export function validateTreeOp(part: OoxmlPart, op: TreeDocOp): TreeOpRejection 
     const control = findNode(part, op.controlId);
     if (!control) return 'unknown-content-control';
     if (control.kind !== 'contentControl') return 'not-a-content-control';
+    if (
+      op.op === 'setContentControlValue' &&
+      typeof op.value !== 'string' &&
+      op.value.kind === 'checkbox' &&
+      !checkboxContentWritable(contentControlContentOf(control))
+    ) {
+      return 'unsupported';
+    }
     if (op.op === 'setContentControlProperties') {
       if (op.tag === undefined && op.alias === undefined && op.lock === undefined) {
         return 'invalidArgs';
