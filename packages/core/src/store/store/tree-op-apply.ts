@@ -1,7 +1,7 @@
 import { applySetFieldCode } from './tree-op-field-code.ts';
 import { applyTableAuthoring } from './tree-op-table-batch.ts';
 import { applyTableProperties } from './tree-op-table-authoring.ts';
-import { mintCheckboxRun } from './content-control-run.ts';
+import { checkboxContent } from './content-control-checkbox.ts';
 import { applyCommitTextFormField, applyTextFormFieldDefault } from './tree-op-field-results.ts';
 import { removeCoveredTextFormDefinitions } from './text-form-field-deletion.ts';
 // Op application over the canonical tree (tree-ops seam).
@@ -2042,10 +2042,8 @@ function applySetContentControlValue(
   const type = contentControlValueTypeOf(control);
   let nextControl: OoxmlNode = control;
 
-  const setTextContent = (display: string, font?: string): void => {
-    const run = font
-      ? mintCheckboxRun(nextId, display, font)
-      : runElement(nextId, [textElement(nextId, display)]);
+  const setTextContent = (display: string): void => {
+    const run = runElement(nextId, [textElement(nextId, display)]);
     const existingContent = contentControlContentOf(nextControl);
     const existingParagraph =
       !inline && existingContent?.children.length === 1 ? existingContent.children[0] : undefined;
@@ -2182,7 +2180,15 @@ function applySetContentControlValue(
       });
       const glyph = checked ? payload.checkedGlyph : payload.uncheckedGlyph;
       const font = checked ? payload.checkedFont : payload.uncheckedFont;
-      setTextContent(glyph, font);
+      const children = checkboxContent(
+        contentControlContentOf(nextControl),
+        { hex: glyph, font },
+        glyph,
+        nextId
+      );
+      if (!children) return { ok: false, reason: 'unsupported' };
+      nextControl = replaceControlContent(nextControl, children, nextId);
+      nextControl = withUpdatedProperties(nextControl, clearShowingPlaceholder);
       break;
     }
     case 'date': {

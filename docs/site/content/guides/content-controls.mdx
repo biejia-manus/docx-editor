@@ -53,6 +53,9 @@ try {
 
 `getByTag(tag)` narrows the collection directly when you know what you are looking for, and `getById(id)` / `getFirstOrNullObject()` address a single control.
 
+Toggling a checkbox in a table preserves its enclosing cell, row, and formatting,
+including after you save and reopen the document.
+
 ## Values are typed
 
 `setValue` takes a discriminated value rather than a bare string, so a typed control cannot be filled with something it cannot hold:

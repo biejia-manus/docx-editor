@@ -1,4 +1,4 @@
-import { mintCheckboxRun } from './content-control-run.ts';
+import { checkboxContent } from './content-control-checkbox.ts';
 import { validateCommitTextFormField } from './tree-op-field-results.ts';
 import { enforcesFormsProtection, sectionProtectsForms } from './forms-protection.ts';
 export {
@@ -1583,12 +1583,9 @@ export function editedProperties(
 function contentWithText(
   content: OoxmlElement | undefined,
   text: string,
-  nextId: () => string,
-  symbol?: PlannedValue['symbol']
+  nextId: () => string
 ): readonly OoxmlNode[] {
-  const run = symbol
-    ? mintCheckboxRun(nextId, symbol.hex, symbol.font, firstRunProperties(content, nextId), text)
-    : textRun(nextId, text, firstRunProperties(content, nextId));
+  const run = textRun(nextId, text, firstRunProperties(content, nextId));
   const firstParagraph = content?.children.find((child) => child.kind === 'paragraph');
   if (!firstParagraph || firstParagraph.kind === 'textValue') return [run];
   const pPr = firstParagraph.children.find(
@@ -1648,6 +1645,10 @@ export function applySetContentControlValue(
   const nextId = createNodeIdAllocator(part);
   const sdtPr = contentControlPropertiesContainerOf(control);
   const content = contentControlContentNodeOf(control);
+  const children = planned.symbol
+    ? checkboxContent(content, planned.symbol, planned.text, nextId)
+    : contentWithText(content, planned.text, nextId);
+  if (!children) return { ok: false, reason: 'unsupported' };
   const nextProperties = editedProperties(
     sdtPr,
     {
@@ -1661,7 +1662,7 @@ export function applySetContentControlValue(
   const nextContent = {
     ...(content ??
       wmlElement(nextId, 'sdtContent', { kind: 'contentControlContent' as OoxmlNode['kind'] })),
-    children: contentWithText(content, planned.text, nextId, planned.symbol),
+    children,
   } as OoxmlNode;
 
   const rebuilt = {
