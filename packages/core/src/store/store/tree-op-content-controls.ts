@@ -1,4 +1,8 @@
-import { checkboxContent } from './content-control-checkbox.ts';
+import {
+  checkboxContent,
+  checkboxStateHexes,
+  type CheckboxSymbol,
+} from './content-control-checkbox.ts';
 import { validateCommitTextFormField } from './tree-op-field-results.ts';
 import { enforcesFormsProtection, sectionProtectsForms } from './forms-protection.ts';
 export {
@@ -1343,7 +1347,7 @@ interface PlannedValue {
   readonly lastValue?: string;
   readonly fullDate?: string;
   readonly checked?: boolean;
-  readonly symbol?: { readonly hex: string; readonly font: string };
+  readonly symbol?: CheckboxSymbol;
 }
 
 /**
@@ -1426,6 +1430,7 @@ function planValue(
         symbol: {
           hex: state?.value ?? (value.checked ? '2612' : '2610'),
           font: state?.font ?? 'MS Gothic',
+          states: checkboxStateHexes(properties.checkbox),
         },
       };
     }
@@ -1645,8 +1650,9 @@ export function applySetContentControlValue(
   const nextId = createNodeIdAllocator(part);
   const sdtPr = contentControlPropertiesContainerOf(control);
   const content = contentControlContentNodeOf(control);
+  const inline = parentOf(part, control.id)?.kind === 'paragraph';
   const children = planned.symbol
-    ? checkboxContent(content, planned.symbol, planned.text, nextId)
+    ? checkboxContent(content, planned.symbol, planned.text, nextId, inline)
     : contentWithText(content, planned.text, nextId);
   if (!children) return { ok: false, reason: 'unsupported' };
   const nextProperties = editedProperties(

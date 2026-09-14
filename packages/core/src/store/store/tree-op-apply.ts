@@ -2182,9 +2182,10 @@ function applySetContentControlValue(
       const font = checked ? payload.checkedFont : payload.uncheckedFont;
       const children = checkboxContent(
         contentControlContentOf(nextControl),
-        { hex: glyph, font },
+        { hex: glyph, font, states: [payload.checkedGlyph, payload.uncheckedGlyph] },
         glyph,
-        nextId
+        nextId,
+        inline
       );
       if (!children) return { ok: false, reason: 'unsupported' };
       nextControl = replaceControlContent(nextControl, children, nextId);

@@ -54,7 +54,10 @@ try {
 `getByTag(tag)` narrows the collection directly when you know what you are looking for, and `getById(id)` / `getFirstOrNullObject()` address a single control.
 
 Toggling a checkbox in a table preserves its enclosing cell, row, and formatting,
-including after you save and reopen the document.
+including after you save and reopen the document. The toggle rewrites only the run that
+shows the state glyph. If the control's content holds no paragraph and no run the editor
+can identify, such as a nested control or foreign markup, the write is refused instead of
+replacing that content.
 
 ## Values are typed
 

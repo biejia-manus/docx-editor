@@ -125,3 +125,97 @@ for (const input of ['string', 'typed'] as const) {
     expect(serializeOoxmlPart(part)).toBe(before);
   });
 }
+
+const mintedRun =
+  '<w:r><w:rPr><w:rFonts w:ascii="MS Gothic" w:eastAsia="MS Gothic" w:hAnsi="MS Gothic"/></w:rPr><w:sym w:char="2612" w:font="MS Gothic"/></w:r>';
+const deletedRun = (content: string) =>
+  '<w:del w:id="7" w:author="Reviewer" w:date="2024-01-01T00:00:00Z">' + content + '</w:del>';
+
+for (const input of ['string', 'typed'] as const) {
+  const value = input === 'string' ? 'true' : ({ kind: 'checkbox', checked: true } as const);
+  const toggle = (part: OoxmlPart): string => {
+    const node = contentControlsIn(part.root)[0]!.node;
+    const result = applyTreeOp(part, { op: 'setContentControlValue', controlId: node.id, value });
+    if (!result.ok) throw new Error(result.reason);
+    return serializeOoxmlPart(result.part);
+  };
+
+  test(`an empty block-level checkbox ${input} write lands its run inside a paragraph`, () => {
+    expect(toggle(load(control('')))).toContain(
+      `<w:sdtContent><w:p>${mintedRun}</w:p></w:sdtContent>`
+    );
+  });
+
+  test(`an empty inline checkbox ${input} write lands a bare run`, () => {
+    expect(toggle(load(paragraph(control(''))))).toContain(
+      `<w:sdtContent>${mintedRun}</w:sdtContent>`
+    );
+  });
+
+  test(`checkbox ${input} writes skip a tracked deletion and update the live run`, () => {
+    const deleted = deletedRun('<w:r><w:rPr><w:b/></w:rPr><w:delText>☒</w:delText></w:r>');
+    const xml = toggle(load(paragraph(control(deleted + run))));
+    expect(xml).toContain('<w:delText>☒</w:delText>');
+    expect(xml).toContain(
+      '</w:del><w:r w:rsidRPr="00D55315"><w:rPr><w:rFonts w:ascii="MS Gothic" w:eastAsia="MS Gothic" w:hAnsi="MS Gothic"/><w:b/></w:rPr><w:sym w:char="2612" w:font="MS Gothic"/></w:r>'
+    );
+    expect(xml.match(/<w:sym /g)).toHaveLength(1);
+  });
+
+  test(`checkbox ${input} writes add a live run when the paragraph holds only a tracked deletion`, () => {
+    const deleted = deletedRun('<w:r><w:delText>☒</w:delText></w:r>');
+    const xml = toggle(load(control(paragraph(deleted))));
+    expect(xml).toContain('<w:delText>☒</w:delText>');
+    // The new run lands inside the bookmark that covered the empty paragraph.
+    expect(xml).toContain(`</w:del>${mintedRun}<w:bookmarkEnd w:id="0"/></w:p>`);
+    expect(xml.match(/<w:sym /g)).toHaveLength(1);
+  });
+
+  test(`checkbox ${input} writes update the glyph run, not a label that precedes it`, () => {
+    const label = '<w:r><w:rPr><w:i/></w:rPr><w:t xml:space="preserve">Option A </w:t></w:r>';
+    const xml = toggle(load(table(row(control(cell(paragraph(label + run)))))));
+    expect(xml).toContain('<w:t xml:space="preserve">Option A </w:t>');
+    expect(xml).toContain(
+      'Option A </w:t></w:r><w:r w:rsidRPr="00D55315"><w:rPr><w:rFonts w:ascii="MS Gothic" w:eastAsia="MS Gothic" w:hAnsi="MS Gothic"/><w:b/></w:rPr><w:sym w:char="2612" w:font="MS Gothic"/></w:r>'
+    );
+    expect(xml.match(/<w:sym /g)).toHaveLength(1);
+    expect(xml).not.toContain('<w:t>☐</w:t>');
+  });
+
+  test(`checkbox ${input} writes recognise a previously written w:sym as the display run`, () => {
+    const label = '<w:r><w:t xml:space="preserve">Option A </w:t></w:r>';
+    const symbolRun = '<w:r><w:sym w:font="MS Gothic" w:char="2612"/></w:r>';
+    const xml = toggle(load(paragraph(control(label + symbolRun))));
+    expect(xml).toContain('<w:t xml:space="preserve">Option A </w:t>');
+    expect(xml.match(/<w:sym /g)).toHaveLength(1);
+  });
+
+  test(`checkbox ${input} writes reach a glyph run inside block-level w:customXml`, () => {
+    const wrapped =
+      '<w:customXml w:uri="urn:x" w:element="section">' + paragraph(run) + '</w:customXml>';
+    const xml = toggle(load(control(wrapped)));
+    expect(xml).toContain('<w:customXml w:element="section" w:uri="urn:x">');
+    expect(xml).toContain('<w:sym w:char="2612" w:font="MS Gothic"/>');
+    expect(xml).not.toContain('<w:t>☐</w:t>');
+  });
+
+  test(`checkbox ${input} writes into an empty paragraph inherit the paragraph mark formatting`, () => {
+    const marked =
+      '<w:p><w:pPr><w:rPr><w:ins w:id="3" w:author="a" w:date="2024-01-01T00:00:00Z"/><w:b/></w:rPr></w:pPr></w:p>';
+    const xml = toggle(load(control(marked)));
+    expect(xml).toContain(
+      '</w:pPr><w:r><w:rPr><w:rFonts w:ascii="MS Gothic" w:eastAsia="MS Gothic" w:hAnsi="MS Gothic"/><w:b/></w:rPr><w:sym w:char="2612" w:font="MS Gothic"/></w:r></w:p>'
+    );
+  });
+
+  test(`checkbox ${input} writes refuse a nested control rather than writing into it`, () => {
+    const nested =
+      '<w:sdt><w:sdtPr><w:id w:val="5"/><w:text/></w:sdtPr><w:sdtContent><w:r><w:t>☐</w:t></w:r></w:sdtContent></w:sdt>';
+    const part = load(paragraph(control(nested)));
+    const before = serializeOoxmlPart(part);
+    const node = contentControlsIn(part.root)[0]!.node;
+    const result = applyTreeOp(part, { op: 'setContentControlValue', controlId: node.id, value });
+    expect(result).toEqual({ ok: false, reason: 'unsupported' });
+    expect(serializeOoxmlPart(part)).toBe(before);
+  });
+}
